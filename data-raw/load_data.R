@@ -1,6 +1,7 @@
 library(dplyr)
 library(tidyr)
 library(marmap)
+# library(googlesheets4)
 # remotes::install_github("NOAA-EDAB/ecodata")
 source("R/helper_functions.R")
 
@@ -116,5 +117,16 @@ ecomon_epu <- ecomon_format %>%
          zoo_gear,
          ich_gear) %>%
   data.frame()
+
+### Bring in the forage taxa info
+forage_taxa <- googlesheets4::read_sheet("https://docs.google.com/spreadsheets/d/1z0TkgN3XYQ9NCF2r0CLTYnJRFog74-fSjXHpAfbt-UI/edit?usp=sharing") %>%
+  mutate(spp = gsub("_10m2|_abnd", "", `COLUMN NAME`),
+         sciname = stringr::str_to_sentence(`TAXA NAME`),
+         sciname = gsub(" - append", "", sciname),
+         forage_group = ifelse(is.na(IchGroup), ZooGroup, IchGroup)) %>%
+  select(sciname, spp, forage_name = `Forage Name`, forage_group)
+
+ecomon_epu <- ecomon_epu %>%
+  left_join(forage_taxa)
 
 usethis::use_data(ecomon_epu, overwrite = TRUE)
