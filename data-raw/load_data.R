@@ -1,6 +1,8 @@
 library(dplyr)
 library(tidyr)
 library(marmap)
+# remotes::install_github("NOAA-EDAB/ecodata")
+source("R/helper_functions.R")
 
 ## Right now the most up to date survdat is on ECSA. Soon this will migrate to ecodata
 load(url("https://github.com/NOAA-EDAB/ECSA/blob/master/data/Survdat.RData?raw=true"))
@@ -11,9 +13,9 @@ usethis::use_data(survdat, overwrite = TRUE)
 ### ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
 
 # download.file(url = "https://www.nodc.noaa.gov/archive/arc0143/0187513/1.1/data/0-data/EcoMon_Plankton_Data_v3_5.csv",
-#               destfile = "analysis/data/raw_data/EcoMon_Plankton_data_v3_5.csv")
+#               destfile = "data-raw/EcoMon_Plankton_data_v3_5.csv", mode = "wb")
 
-ecomon_long <- readr::read_csv("analysis/data/raw_data/EcoMon_Plankton_Data_v3_5.csv") %>%
+ecomon_long <- readr::read_csv("data-raw/EcoMon_Plankton_data_v3_5.csv") %>%
   mutate(volume = as.double(volume_100m3),
          date = as.Date(date, format="%d-%b-%y")) %>%
   select(-ends_with("_10m2"),
@@ -25,7 +27,6 @@ ecomon_long <- readr::read_csv("analysis/data/raw_data/EcoMon_Plankton_Data_v3_5
                values_to = "abundance")
 
 usethis::use_data(ecomon_long, overwrite = TRUE)
-
 
 # These oblique tows include a measure of total volume swept, and we divide the total number of
 # zoop by volume swept and then multiply by the seafloor depth at the beginning of the tow to
@@ -40,7 +41,7 @@ usethis::use_data(ecomon_long, overwrite = TRUE)
 ### ~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
 
 # download.file(url = "https://www.nodc.noaa.gov/archive/arc0143/0187513/1.1/data/0-data/EcoMon_Plankton_Data_v3_5.csv",
-#               destfile = "analysis/data/raw_data/EcoMon_Plankton_data_v3_5.csv")
+#               destfile = "data-raw/EcoMon_Plankton_data_v3_5.csv", mode = "wb")
 
 data("ecomon_long")
 #
@@ -52,17 +53,17 @@ res <- 1
 bath_filename <- sprintf("marmap_coord_%s;%s;%s;%s_res_%s.csv",
                          xlims[1], ylims[1], xlims[2], ylims[2], res)
 
-if(!bath_filename %in% list.files("analysis/data/raw_data")){
+if(!bath_filename %in% list.files("data-raw")){
   nesbath <- marmap::getNOAA.bathy(lon1 = xlims[1], lon2 = xlims[2],
                                    lat1 = ylims[1], lat2 = ylims[2],
                                    resolution = res,
                                    keep = TRUE) %>%
     marmap::as.raster()
 
-  file.copy(bath_filename, "analysis/data/raw_data")
+  file.copy(bath_filename, "data-raw")
   file.remove(bath_filename)
 } else {
-  nesbath <- marmap::read.bathy(sprintf("analysis/data/raw_data/%s", bath_filename), header = T) %>%
+  nesbath <- marmap::read.bathy(sprintf("data-raw/%s", bath_filename), header = T) %>%
     marmap::as.raster()
 }
 
