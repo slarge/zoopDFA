@@ -123,7 +123,7 @@ forage_taxa <- googlesheets4::read_sheet("https://docs.google.com/spreadsheets/d
   mutate(spp = gsub("_10m2|_abnd", "", `COLUMN NAME`),
          sciname = stringr::str_to_sentence(`TAXA NAME`),
          sciname = gsub(" - append", "", sciname),
-         forage_group = ifelse(is.na(IchGroup), ZooGroup, IchGroup)) %>%
+         forage_group = ifelse(is.na(IchGroup), ZooGroup, IchGroup + 100)) %>%
   select(sciname, spp, forage_name = `Forage Name`, forage_group)
 
 ecomon_epu <- ecomon_epu %>%
