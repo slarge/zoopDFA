@@ -130,3 +130,49 @@ ecomon_epu <- ecomon_epu %>%
   left_join(forage_taxa)
 
 usethis::use_data(ecomon_epu, overwrite = TRUE)
+
+
+## Post stratify data according to BTS strata
+crs_strata <- 4269 # NAD83 https://epsg.org/crs_4269/NAD83.html
+# crs_epu <- 9311 # NAD27 https://epsg.org/crs_9311/NAD27-US-National-Atlas-Equal-Area.html
+
+strata <- sf::st_read(dsn = here::here("data-raw/NES_BOTTOM_TRAWL_STRATA.shp")) %>%
+  sf::st_transform(crs = sf::st_crs(crs_strata))
+
+sf::sf_use_s2(FALSE)
+
+## Post stratify data according to EPUs
+ecomon_strata <- ecomon_format %>%
+  sf::st_as_sf(coords = c("lon","lat"), crs = crs_strata) %>%
+  sf::st_join(strata) %>%
+  sfc_as_cols(names = c("lon", "lat")) %>%
+  sf::st_drop_geometry() %>%
+  select(id,
+         spp,
+         strata = STRATA,
+         day,
+         season,
+         bottom_depth = depth,
+         vessel,
+         abundance,
+         areaswept_km2,
+         lat,
+         lon,
+         year,
+         zoo_gear,
+         ich_gear) %>%
+  data.frame()
+
+### Bring in the forage taxa info
+forage_taxa <- googlesheets4::read_sheet("https://docs.google.com/spreadsheets/d/1z0TkgN3XYQ9NCF2r0CLTYnJRFog74-fSjXHpAfbt-UI/edit?usp=sharing") %>%
+  mutate(spp = gsub("_10m2|_abnd", "", `COLUMN NAME`),
+         sciname = stringr::str_to_sentence(`TAXA NAME`),
+         sciname = gsub(" - append", "", sciname),
+         forage_group = ifelse(is.na(IchGroup), ZooGroup, IchGroup + 100)) %>%
+  select(sciname, spp, forage_name = `Forage Name`, forage_group)
+
+ecomon_strata <- ecomon_strata %>%
+  left_join(forage_taxa)
+
+usethis::use_data(ecomon_strata, overwrite = TRUE)
+
