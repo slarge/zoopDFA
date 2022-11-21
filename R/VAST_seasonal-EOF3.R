@@ -47,10 +47,10 @@ data("ecomon_epu")
 #   distinct() %>%
 #   pull(spp)
 
-spp_list <- c("calfin", "chaeto", "cham", "clauso", "ctyp",
-              "euph", "gas", "hyper", "larvaceans",
-              "mlucens", "oithspp", "para", "pseudo", "tlong")
-
+spp_list <- c("calfin", "chaeto", "cham", "clauso", "ctyp")#,
+              # "euph", "gas", "hyper", "larvaceans",
+              # "mlucens", "oithspp", "para", "pseudo", "tlong")
+n_x = 50
 
 ## Seasonal model -----
 working_dir <- here::here("analysis/vast_seasonal_EOF3/")
@@ -72,9 +72,10 @@ if(!dir.exists(working_dir)) {
 zoop_dat <- ecomon_epu %>%
   dplyr::filter(spp %in% spp_list,
                 EPU %in% c("GB", "GOM", "MAB"),
-                as.numeric(year) >= 1994) %>%
-  dplyr::mutate(areaswept_km2 = 1) %>%
-  group_by(year, season) %>%
+                as.numeric(year) >= 2010) %>%
+  dplyr::mutate(areaswept_km2 = 1,
+                species_number = as.numeric(factor(spp)) - 1) %>%
+  # group_by(year, season) %>%
   # slice_sample(prop = .5) %>%
   # droplevels() %>%
   data.frame()
@@ -106,10 +107,12 @@ zoop_dat$year_season = yearseason_i
 zoop_dat$season = factor(zoop_dat$season, levels = season_set)
 
 # Some last processing steps
-zoop_dat = zoop_dat[, c("year", "season", "year_season", "lat", "lon", "areaswept_km2", "abundance")]
+zoop_dat = zoop_dat[, c("species_number", "spp", "year", "season", "year_season", "lat", "lon", "areaswept_km2", "abundance")]
 
 # Make dummy observation for each season-year combination
 dummy_data = data.frame(
+  # species_number = zoop_dat[, "species_number"],
+  # spp = zoop_dat[, "spp"],
   year = yearseason_grid[,'year'],
   season = yearseason_grid[,'season'],
   year_season = yearseason_levels,
@@ -117,13 +120,17 @@ dummy_data = data.frame(
   lon = mean(zoop_dat[,'lon']),
   areaswept_km2 = mean(zoop_dat[,'areaswept_km2']),
   abundance = 0,
-  dummy = TRUE)
+  dummy = TRUE) %>%
+  expand_grid(spp = unique(zoop_dat[, "spp"])) %>%
+  mutate(species_number =  as.numeric(factor(spp)) - 1)
 
 # Combine with sampling data
 full_data = rbind(cbind(zoop_dat, dummy = FALSE), dummy_data)
 
 # Create sample data
 samp_dat = data.frame(
+  "spp" =  full_data$spp,
+  "species_number" = full_data$species_number,
   "year_season" = as.numeric(full_data$year_season)-1,
   "Lat" = full_data$lat,
   "Lon" = full_data$lon,
@@ -162,7 +169,8 @@ cov_dat = data.frame(
 ## >1 = number of elements in a factor-analysis covariance
 ## "IID" = random effect following an IID distribution
 
-FieldConfig <- c("Omega1" = "IID", "Epsilon1" = "IID", "Omega2" = "IID", "Epsilon2" = "IID")
+FieldConfig <- c("Omega1" = "IID", "Epsilon1" = "IID",
+                 "Omega2" = "IID", "Epsilon2" = "IID")
 
 
 ## Autoregressive structure -----
@@ -210,8 +218,9 @@ ObsModel <- c("PosDist" = 1, # Delta-Gamma; Alternative "Poisson-link delta-mode
 settings = make_settings(n_x = n_x,
                          Region = "northwest_atlantic",
                          strata.limits = "EPU",
-                         purpose = "index2",
-                         FieldConfig = FieldConfig,
+                         purpose = "EOF3",
+                         n_categories = 2,
+                         # FieldConfig = FieldConfig,
                          RhoConfig = RhoConfig,
                          ObsModel = ObsModel,
                          bias.correct = FALSE,
@@ -233,8 +242,13 @@ X2_formula = ~ Season #+ Year_Cov
 # X1config_cp_use = matrix( c(2, rep(3,nlevels(cov_dat$Season)-1), 2, rep(3,nlevels(cov_dat$Year_Cov)-1) ), nrow=1 )
 # X2config_cp_use = matrix( c(2, rep(3,nlevels(cov_dat$Season)-1), 2, rep(3,nlevels(cov_dat$Year_Cov)-1) ), nrow=1 )
 
-X1config_cp_use = matrix( c(2, rep(3,nlevels(cov_dat$Season)-1)), nrow=1 )
-X2config_cp_use = matrix( c(2, rep(3,nlevels(cov_dat$Season)-1)), nrow=1 )
+# X1config_cp_use = matrix( c(2, rep(3,nlevels(cov_dat$Season)-1)), nrow=1 )
+# X2config_cp_use = matrix( c(2, rep(3,nlevels(cov_dat$Season)-1)), nrow=1 )
+
+X1config_cp_use = matrix( rep(c(2, rep(3, nlevels(cov_dat$Season)-1)), length(spp_list)), nrow = length(spp_list), byrow = TRUE)
+X2config_cp_use = matrix( rep(c(2, rep(3, nlevels(cov_dat$Season)-1)), length(spp_list)), nrow = length(spp_list), byrow = TRUE)
+
+
 
 
 #####
@@ -245,6 +259,7 @@ fit_orig = fit_model(settings = settings,
                      Lat_i = samp_dat$Lat,
                      Lon_i = samp_dat$Lon,
                      t_i = samp_dat$year_season,
+                     c_i = samp_dat$species_number,
                      b_i = as_units(samp_dat$abundance, "count"),
                      a_i = as_units(samp_dat$areaswept_km2, "km^2"),
                      epu_to_use = settings$epu_to_use,
@@ -257,13 +272,12 @@ fit_orig = fit_model(settings = settings,
                      X_contrasts = list(Season = contrasts(cov_dat$Season, contrasts = FALSE)#,
                                         # Year_Cov = contrasts(cov_dat$Year_Cov, contrasts = FALSE)
                      ),
-                     run_model = FALSE,
+                     Use_REML = TRUE,
                      PredTF_i = samp_dat$Dummy,
-                     # Use_REML = FALSE,
-                     # getsd = TRUE,
-                     # test_fit = FALSE,
+                     run_model = FALSE,
+                     getsd = FALSE,
+                     newton_steps = 1,
                      Options = c('treat_nonencounter_as_zero' = TRUE),
-                     # Method = Method,
                      optimize_args = list("lower" = -Inf,
                                           "upper" = Inf))
 
@@ -278,14 +292,12 @@ Map_adjust = fit_orig$tmb_list$Map
 # rep(as.numeric(Map_adjust$log_sigmaXi2_cp[nlevels(cov_dat$Season)+1]), nlevels(cov_dat$Year_Cov))))
 #
 #
-Map_adjust$log_sigmaXi1_cp = factor(c(rep(as.numeric(Map_adjust$log_sigmaXi1_cp[1]), nlevels(cov_dat$Season))))#,
-# rep(as.numeric(Map_adjust$log_sigmaXi1_cp[nlevels(cov_dat$Season)+1])#,
-# nlevels(cov_dat$Year_Cov)
-# )))
-Map_adjust$log_sigmaXi2_cp = factor(c(rep(as.numeric(Map_adjust$log_sigmaXi2_cp[1]), nlevels(cov_dat$Season))))#,
-# rep(as.numeric(Map_adjust$log_sigmaXi2_cp[nlevels(cov_dat$Season)+1])#,
-# nlevels(cov_dat$Year_Cov)
-# )))
+
+# Map_adjust$log_sigmaXi1_cp = factor(c(rep(as.numeric(Map_adjust$log_sigmaXi1_cp[1]), nlevels(cov_dat$Season))))#,
+# Map_adjust$log_sigmaXi2_cp = factor(c(rep(as.numeric(Map_adjust$log_sigmaXi2_cp[1]), nlevels(cov_dat$Season))))#,
+
+Map_adjust$log_sigmaXi1_cp = factor(c(rep(as.numeric(Map_adjust$log_sigmaXi1_cp[1]), 20)))#,
+Map_adjust$log_sigmaXi2_cp = factor(c(rep(as.numeric(Map_adjust$log_sigmaXi2_cp[1]), 20)))#,
 
 
 # Fit final model with new mapping
@@ -293,6 +305,7 @@ fit = fit_model(settings = settings,
                 Lat_i = samp_dat$Lat,
                 Lon_i = samp_dat$Lon,
                 t_i = samp_dat$year_season,
+                c_i = samp_dat$species_number,
                 b_i =  as_units(samp_dat$abundance, "count"),
                 a_i = as_units(samp_dat$areaswept_km2, "km^2"),
                 epu_to_use = settings$epu_to_use,
@@ -305,13 +318,13 @@ fit = fit_model(settings = settings,
                 X_contrasts = list(Season = contrasts(cov_dat$Season, contrasts = FALSE)#,
                                    # Year_Cov = contrasts(cov_dat$Year_Cov, contrasts = FALSE)
                 ),
-                newtonsteps = 1,
+                Use_REML = TRUE,
                 PredTF_i = samp_dat$Dummy,
+                newtonsteps = 1,
+                run_model = TRUE,
                 Map = Map_adjust,
-                # Use_REML = FALSE,
-                # getsd = TRUE,
-                # Options = c('treat_nonencounter_as_zero' = TRUE),
-                # Method = Method,
+                getsd = FALSE,
+                Options = c('treat_nonencounter_as_zero' = TRUE),
                 optimize_args = list("lower" = -Inf,
                                      "upper" = Inf))
 
