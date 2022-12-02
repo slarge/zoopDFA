@@ -89,6 +89,7 @@ vast_wrapper <- function(n_x = 50){
                   species_number = as.numeric(factor(spp)) - 1) %>%
     select(year,
            year_season,
+           season,
            lat,
            lon,
            areaswept_km2,
@@ -203,6 +204,9 @@ vast_wrapper <- function(n_x = 50){
                   a_i = as_units(zoop_dat$areaswept_km2, "km^2"),
                   epu_to_use = settings$epu_to_use,
                   newtonsteps = 1,
+                  covariate_data = zoop_dat,
+                  X1_formula = ~ factor(season),
+                  X1config_cp = matrix( 3, nrow=length(spp_list), ncol=4 )
                   getsd = TRUE,
                   Use_REML = TRUE,
                   working_dir = paste0(working_dir, "/"),
