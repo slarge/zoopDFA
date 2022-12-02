@@ -49,10 +49,10 @@ data("ecomon_epu")
 #   distinct() %>%
 #   pull(spp)
 
-# spp_list <- c("calfin", "chaeto", "cham", "clauso", "ctyp",
-#               "euph", "gas", "hyper", "larvaceans",
-#               "mlucens", "oithspp", "para", "pseudo", "tlong")
-spp_list <- c("calfin", "cham", "ctyp", "tlong")
+spp_list <- c("calfin", "chaeto", "cham", "clauso", "ctyp",
+              "euph", "gas", "hyper", "larvaceans",
+              "mlucens", "oithspp", "para", "pseudo", "tlong")
+# spp_list <- c("calfin", "cham", "ctyp", "tlong")
 n_x = 50
 
 vast_wrapper <- function(n_x = 50){
@@ -79,7 +79,13 @@ vast_wrapper <- function(n_x = 50){
                   as.numeric(year) >= 2010,
                   as.numeric(year) < 2015) %>%
     dplyr::mutate(areaswept_km2 = 1,
-                  year_season = factor(paste(year, season, sep = "_")),
+                  year_level = factor(year),
+                  season = factor(season, levels = c("winter", "spring", "summer", "fall")),
+                  year_labels = factor(paste(year, season, sep = "_")),
+                  year_season = factor(year_labels, levels = paste(rep(levels(year_level),
+                                                                       each = nlevels(season)),
+                                                                   levels(season),
+                                                                   sep="_")),
                   species_number = as.numeric(factor(spp)) - 1) %>%
     select(year,
            year_season,
@@ -119,10 +125,12 @@ vast_wrapper <- function(n_x = 50){
   ## >1 = number of elements in a factor-analysis covariance
   ## "IID" = random effect following an IID distribution
 
-  FieldConfig <- c("Omega1" = "IID", "Epsilon1" = "IID",
-                   "Omega2" = "IID", "Epsilon2" = "IID")
+  # FieldConfig <- c("Omega1" = "IID", "Epsilon1" = "IID",
+  #                  "Omega2" = "IID", "Epsilon2" = "IID")
 
-
+  FieldConfig = matrix(c("IID","Identity","IID",2, 0,0,"IID","Identity"), ncol = 2, nrow = 4,
+                       dimnames = list(c("Omega","Epsilon","Beta","Epsilon_year"),
+                                       c("Component_1","Component_2")))
   ## Autoregressive structure -----
 
   ## Control autoregressive structure for parameters over time
@@ -174,12 +182,11 @@ vast_wrapper <- function(n_x = 50){
                            ObsModel = ObsModel,
                            RhoConfig = RhoConfig,
                            use_anisotropy = FALSE,
-                           # FieldConfig = FieldConfig,
+                           FieldConfig = FieldConfig,
                            bias.correct = FALSE#,
                            # Options = c('treat_nonencounter_as_zero' = TRUE)
                            )
 
-  # settings$FieldConfig["Omega", "Component_1"] <- 0
   settings$epu_to_use <- c("Georges_Bank", "Gulf_of_Maine", "Mid_Atlantic_Bight")
 
   #####
@@ -221,7 +228,9 @@ results = plot( fit,
                 check_residuals=FALSE,
                 plot_set=c(3,16),
                 working_dir = "analysis/vast_seasonal_EOF3/",
-                category_names = spp_list)
+                category_names = spp_list,
+                year_labels = levels(zoop_dat$year_season),
+                strata_names =  c("Georges Bank", "Gulf of Maine", "Mid-Atlantic Bight"))
 
 
 # Creating model formula
