@@ -206,17 +206,19 @@ vast_wrapper <- function(n_x = 50){
                   b_i = as_units(zoop_dat$abundance, "count"),
                   a_i = as_units(zoop_dat$areaswept_km2, "km^2"),
                   epu_to_use = settings$epu_to_use,
-                  newtonsteps = 1,
+                  newtonsteps = 0,
                   covariate_data = data.frame(zoop_dat, Lat=zoop_dat$lat, Lon=zoop_dat$lon, Year=as.numeric(zoop_dat$year_season)-1),
                   X1_formula = ~ season,
-                  X1config_cp = matrix( 3, nrow=length(spp_list), ncol=3 ),
-                  #X_contrasts = list(season = contrasts(zoop_dat$season, contrasts = FALSE)),
+                  X1config_cp = matrix( 2, nrow=length(spp_list), ncol=4 ),
+                  X_contrasts = list(season = contrasts(zoop_dat$season, contrasts = FALSE)),
                   getsd = TRUE,
                   Use_REML = FALSE,
                   run_model = TRUE,
                   working_dir = paste0(working_dir, "/"),
                   optimize_args = list("lower" = -Inf,
                                        "upper" = Inf))
+  
+  plot(fit, plot_set=c(3,14,16,18) )
   #fit$tmb_list$Obj$fn( fit$tmb_list$Obj$par )
 
   saveRDS(fit, file = paste0(working_dir, "/fit.rds"))
