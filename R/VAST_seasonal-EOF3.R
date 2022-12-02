@@ -13,6 +13,8 @@ library(VAST)
 Sys.setenv(PATH = paste("C:/Rtools/bin", Sys.getenv("PATH"), sep=";"))
 Sys.setenv(BINPREF = "C:/Rtools/mingw_$(WIN)/bin/")
 
+setwd(R'(C:\Users\James.Thorson\Desktop\Git\zoopDFA)')
+
 # Load Data -----
 data("ecomon_epu")
 
@@ -204,11 +206,13 @@ vast_wrapper <- function(n_x = 50){
                   a_i = as_units(zoop_dat$areaswept_km2, "km^2"),
                   epu_to_use = settings$epu_to_use,
                   newtonsteps = 1,
-                  covariate_data = zoop_dat,
-                  X1_formula = ~ factor(season),
-                  X1config_cp = matrix( 3, nrow=length(spp_list), ncol=4 )
+                  covariate_data = cbind(zoop_dat, Lat=zoop_dat$lat, Lon=zoop_dat$lon, Year=as.numeric(zoop_dat$year_season)-1),
+                  X1_formula = ~ season,
+                  X1config_cp = matrix( 3, nrow=length(spp_list), ncol=4 ),
+                  X_contrasts = list(season = contrasts(zoop_dat$season, contrasts = FALSE)),
                   getsd = TRUE,
                   Use_REML = TRUE,
+                  #run_model = FALSE,
                   working_dir = paste0(working_dir, "/"),
                   optimize_args = list("lower" = -Inf,
                                        "upper" = Inf))
