@@ -49,9 +49,10 @@ data("ecomon_epu")
 #   distinct() %>%
 #   pull(spp)
 
-spp_list <- c("calfin", "chaeto", "cham", "clauso", "ctyp",
-              "euph", "gas", "hyper", "larvaceans",
-              "mlucens", "oithspp", "para", "pseudo", "tlong")
+# spp_list <- c("calfin", "chaeto", "cham", "clauso", "ctyp",
+#               "euph", "gas", "hyper", "larvaceans",
+#               "mlucens", "oithspp", "para", "pseudo", "tlong")
+spp_list <- c("calfin", "cham", "ctyp", "tlong")
 n_x = 50
 
 vast_wrapper <- function(n_x = 50){
@@ -75,18 +76,19 @@ vast_wrapper <- function(n_x = 50){
   zoop_dat <- ecomon_epu %>%
     dplyr::filter(spp %in% spp_list,
                   EPU %in% c("GB", "GOM", "MAB"),
-                  as.numeric(year) >= 1994) %>%
+                  as.numeric(year) >= 2010,
+                  as.numeric(year) < 2015) %>%
     dplyr::mutate(areaswept_km2 = 1,
-                  year_season = factor( paste(year, season, sep = "_")),
+                  year_season = factor(paste(year, season, sep = "_")),
                   species_number = as.numeric(factor(spp)) - 1) %>%
-    select(species_number,
-           spp,
-           year,
+    select(year,
            year_season,
-           abundance,
-           areaswept_km2,
            lat,
-           lon) %>%
+           lon,
+           areaswept_km2,
+           species_number,
+           spp,
+           abundance) %>%
     data.frame()
 
 
@@ -160,21 +162,24 @@ vast_wrapper <- function(n_x = 50){
   # distribution component. ?VAST::make_data()
 
   ObsModel <- c("PosDist" = 1, # Delta-Gamma; Alternative "Poisson-link delta-model" using log-link for numbers-density and log-link for biomass per number
-                "Link"    = 3)
+                "Link"    = 4)
 
   # Make settings
-  settings = make_settings(n_x = n_x,
+  settings = make_settings(n_x = 100,
                            Region = "northwest_atlantic",
                            strata.limits = "EPU",
+                           # strata.limits = list('All_areas' = 1:1e5),
                            purpose = "EOF3",
                            n_categories = 2,
+                           ObsModel = ObsModel,
+                           RhoConfig = RhoConfig,
                            use_anisotropy = FALSE,
                            # FieldConfig = FieldConfig,
-                           RhoConfig = RhoConfig,
-                           bias.correct = FALSE,
-                           # Options = c('treat_nonencounter_as_zero' = TRUE),
-                           ObsModel = ObsModel)#,
+                           bias.correct = FALSE#,
+                           # Options = c('treat_nonencounter_as_zero' = TRUE)
+                           )
 
+  # settings$FieldConfig["Omega", "Component_1"] <- 0
   settings$epu_to_use <- c("Georges_Bank", "Gulf_of_Maine", "Mid_Atlantic_Bight")
 
   #####
@@ -190,11 +195,10 @@ vast_wrapper <- function(n_x = 50){
                   b_i = as_units(zoop_dat$abundance, "count"),
                   a_i = as_units(zoop_dat$areaswept_km2, "km^2"),
                   epu_to_use = settings$epu_to_use,
+                  newtonsteps = 1,
+                  getsd = TRUE,
+                  Use_REML = TRUE,
                   working_dir = paste0(working_dir, "/"),
-                  # Use_REML = TRUE,
-                  # getsd = TRUE,
-                  newtonsteps = 0,
-                  # Options = c('treat_nonencounter_as_zero' = TRUE),
                   optimize_args = list("lower" = -Inf,
                                        "upper" = Inf))
 
@@ -207,17 +211,16 @@ vast_wrapper <- function(n_x = 50){
 possibly_vast_wrapper <- purrr::quietly(vast_wrapper)
 
 # plan(multisession, workers = 4)
-vast_runs <- possibly_vast_wrapper(n_x = 500)
+vast_runs <- possibly_vast_wrapper(n_x = 750)
 
+# fit <- vast_runs$result$tmb_list
 
 fit <- readRDS(here::here("analysis/vast_seasonal_EOF3/fit.rds"))
-tt <- fit$par$SD
-
 
 results = plot( fit,
                 check_residuals=FALSE,
                 plot_set=c(3,16),
-                working_dir = paste0(working_dir, "/"),
+                working_dir = "analysis/vast_seasonal_EOF3/",
                 category_names = spp_list)
 
 
