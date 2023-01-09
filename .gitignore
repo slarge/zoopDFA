@@ -4,3 +4,5 @@
 .httr-oauth
 .DS_Store
 analysis/**/fit.rds
+data-raw/*do not distribute.csv
+data/*do not distribute.rda
