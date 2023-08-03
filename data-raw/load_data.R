@@ -3,6 +3,7 @@ library(tidyr)
 library(marmap)
 # library(googlesheets4)
 # remotes::install_github("NOAA-EDAB/ecodata")
+
 source("R/helper_functions.R")
 
 ## Right now the most up to date survdat is on ECSA. Soon this will migrate to ecodata
@@ -13,10 +14,11 @@ usethis::use_data(survdat, overwrite = TRUE)
 ## Download and reformat EcoMon data ##
 ### ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
 
-# download.file(url = "https://www.nodc.noaa.gov/archive/arc0143/0187513/1.1/data/0-data/EcoMon_Plankton_Data_v3_5.csv",
-#               destfile = "data-raw/EcoMon_Plankton_data_v3_5.csv", mode = "wb")
+# download.file(url = "https://www.nodc.noaa.gov/archive/arc0143/0187513/3.3/data/0-data/EcoMon_Plankton_Data_v3_8.csv",
+#               destfile = "data-raw/EcoMon_Plankton_data_v3_8.csv", mode = "wb")
 
-ecomon_long <- readr::read_csv("data-raw/EcoMon_Plankton_data_v3_5.csv") %>%
+
+ecomon_long <- readr::read_csv("data-raw/EcoMon_Plankton_data_v3_8.csv") %>%
   mutate(volume = as.double(volume_100m3),
          date = as.Date(date, format="%d-%b-%y")) %>%
   select(-ends_with("_10m2"),
@@ -41,8 +43,9 @@ usethis::use_data(ecomon_long, overwrite = TRUE)
 ## Prepare EcoMon data for VAST ##
 ### ~~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
 
-# download.file(url = "https://www.nodc.noaa.gov/archive/arc0143/0187513/1.1/data/0-data/EcoMon_Plankton_Data_v3_5.csv",
-#               destfile = "data-raw/EcoMon_Plankton_data_v3_5.csv", mode = "wb")
+# download.file(url = "https://www.nodc.noaa.gov/archive/arc0143/0187513/3.3/data/0-data/EcoMon_Plankton_Data_v3_8.csv",
+#               destfile = "data-raw/EcoMon_Plankton_data_v3_8.csv", mode = "wb")
+
 
 data("ecomon_long")
 #
