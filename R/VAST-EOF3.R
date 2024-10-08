@@ -33,7 +33,7 @@ spps <- ecomon_epu %>%
          spp != "euph1") %>%
   left_join(total_stations) %>%
   group_by(year, spp) %>%
-  summarize(positive_stations = sum(present, na.rm = TRUE)/total,
+  reframe(positive_stations = sum(present, na.rm = TRUE)/total,
             keep = ifelse(positive_stations > .1,
                           1, 0),
             forage_group = forage_group) %>%
@@ -84,6 +84,7 @@ vast_wrapper <- function(n_x = 50) {
     select(species_number,
            spp,
            year,
+           season,
            abundance,
            areaswept_km2,
            lat,
@@ -91,13 +92,14 @@ vast_wrapper <- function(n_x = 50) {
     data.frame()
 
 #
-#   ggplot(zoop_dat, aes(x = lon, y = lat)) +
-#     geom_point(data = zoop_dat %>% filter(abundance == 0), color = "black", fill = "black", shape = 21) +
-#     geom_point(data = zoop_dat %>% filter(abundance > 0), aes(color = season, size = abundance), alpha = 0.5) +
-#     facet_wrap(~year) +
-#     # labs(title = i) +
-#     NULL
+  # ggplot(zoop_dat, aes(x = lon, y = lat)) +
+  #   geom_point(data = zoop_dat %>% filter(abundance == 0), color = "black", fill = "black", shape = 21) +
+  #   geom_point(data = zoop_dat %>% filter(abundance > 0), aes(color = season, size = abundance), alpha = 0.5) +
+  #   facet_wrap(~year) +
+  #   # labs(title = i) +
+  #   NULL
 
+  # table( zoop_dat$year, zoop_dat$season )
 
   #####
   ## Model settings

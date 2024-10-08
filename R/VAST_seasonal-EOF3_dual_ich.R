@@ -17,8 +17,6 @@ library(VAST)
 
 # Load Data -----
 data("ecomon_epu")
-
-
 #
 # # # # # Number of stations per year
 # total_stations <- ecomon_epu %>%
@@ -53,22 +51,55 @@ data("ecomon_epu")
 #   distinct() %>%
 #   pull(spp)
 
-# spp_list <- c("acarspp", "calfin", "chaeto", "cham", "cirr", "clauso", "ctyp",
-#               "echino", "euph", "evadnespp", "gas", "hyper", "larvaceans",
-#               "mlucens", "oithspp", "para", "penilia", "pseudo", "salps", "tlong")
-#
-
-spp_list <- c("calfin", "chaeto", "cham", "clauso", "ctyp",
-              "euph", "gas", "hyper", "larvaceans",
-              "mlucens", "oithspp", "para",  "pseudo", "tlong")
+# # # Number of stations per year
+total_stations <- ecomon_epu %>%
+  group_by(year) %>%
+  summarize(total = n_distinct(id))
 
 
-# spp_list <- c("calfin", "cham", "ctyp", "tlong")
-# n_x = 500
+### Proportion of stations with positive tows per year. Cutoff used to "keep"
+spps <- ecomon_epu %>%
+  mutate(present = ifelse(abundance > 0,
+                          1, 0)) %>%
+  filter(year >= 1999,
+         forage_group >= 100,
+         spp != "euph1") %>%
+  left_join(total_stations) %>%
+  mutate(semester = ifelse(season %in% c("winter", "spring"), "first", "second")) %>%
+  group_by(year, semester, spp) %>%
+  reframe(positive_stations = sum(present, na.rm = TRUE)/total,
+          keep = ifelse(positive_stations > .1,
+                        1, 0),
+          forage_group = forage_group) %>%
+  distinct()
+
+
+
+
+# #
+# # ## List of spp where the total number of years by season is greater than 5
+# # ## and each spp group has more than cutoff of positive tows
+spp_list <- spps %>%
+  dplyr::filter(#season %in% season_list,
+    forage_group >= 100) %>%
+  group_by(spp) %>%
+  summarize(count = sum(keep)) %>%
+  filter(count > 5) %>%
+  select(spp) %>%
+  distinct() %>%
+  pull(spp)
+# #
+# ggplot(spps %>% filter(spp %in% spp_list,
+#                        keep == 1), aes(x = year, y = positive_stations, color = spp)) +
+#   geom_point() +
+#   facet_wrap(~semester)
+
+
+n_x = 100
 
 vast_wrapper <- function(n_x = 50){
   ## Seasonal model -----
-  working_dir <- here::here("analysis/vast_seasonal_EOF3/")
+  working_dir <- here::here("analysis/vast_seasonal_EOF3_dual_ich/")
 
   if(!dir.exists(working_dir)) {
     dir.create(working_dir, recursive  = TRUE)
@@ -89,21 +120,28 @@ vast_wrapper <- function(n_x = 50){
 #                  EPU %in% c("GB", "GOM", "MAB"),
 #                  as.numeric(year) >= 2010,
 #                  as.numeric(year) < 2015) %>%
-                  as.numeric(year) >= 1992,
-                  as.numeric(year) <= 2021,
+                  as.numeric(year) >= 2004,
+                  as.numeric(year) <= 2007,
                   EPU %in% c("GB", "GOM", "MAB")) %>%
     dplyr::mutate(areaswept_km2 = 1,
                   year_level = factor(year),
-                  season = factor(season, levels = c("winter", "spring", "summer", "fall")),
-                  year_labels = factor(paste(year, season, sep = "_")),
-                  year_season = factor(year_labels, levels = paste(rep(levels(year_level),
-                                                                       each = nlevels(season)),
-                                                                   levels(season),
+                  semester = ifelse(season %in% c("winter", "spring"), "first", "second"),
+                  semester = factor(semester, levels = c("first", "second")),
+                  year_labels = factor(paste(year, semester, sep = "_")),
+                  year_semester = factor(year_labels, levels = paste(rep(levels(year_level),
+                                                                       each = nlevels(semester)),
+                                                                   levels(semester),
                                                                    sep="_")),
+                  # season = factor(season, levels = c("winter", "spring", "summer", "fall")),
+                  # year_labels = factor(paste(year, season, sep = "_")),
+                  # year_season = factor(year_labels, levels = paste(rep(levels(year_level),
+                  #                                                      each = nlevels(season)),
+                  #                                                  levels(season),
+                  #                                                  sep="_")),
                   species_number = as.numeric(factor(spp)) - 1) %>%
     select(year,
-           year_season,
-           season,
+           year_semester,
+           semester,
            lat,
            lon,
            areaswept_km2,
@@ -112,19 +150,20 @@ vast_wrapper <- function(n_x = 50){
            abundance) %>%
     droplevels() %>%
     # mutate(t_i = as.numeric(year_season)- 1) %>%
-    arrange(year_season) %>%
+    arrange(year_semester) %>%
     data.frame()
 
+  # table( zoop_dat$year, zoop_dat$spp)
 
-  # table( zoop_dat$year, zoop_dat$season )
-
+  # table( zoop_dat$year, zoop_dat$semester )
+  #
   # ggplot(zoop_dat, aes(x = lon, y = lat)) +
   #   geom_point(data = zoop_dat %>% filter(abundance == 0), color = "black", fill = "black", shape = 21) +
   #   geom_point(data = zoop_dat %>% filter(abundance > 0), aes(color = spp, size = abundance), alpha = 0.5) +
-  #   facet_wrap(~ year_season, ncol = 4) +
+  #   facet_grid(year ~ semester, drop = FALSE) +
   #   # labs(title = i) +
   #   NULL
-
+  # # #
 
   #####
   ## Model settings
@@ -189,11 +228,11 @@ vast_wrapper <- function(n_x = 50){
   # component sets the distribution of the positive
   # distribution component. ?VAST::make_data()
 #
-  ObsModel <- c("PosDist" = 1, # Delta-Gamma; Alternative "Poisson-link delta-model" using log-link for numbers-density and log-link for biomass per number
-                "Link"    = 4)
-
   # ObsModel <- c("PosDist" = 1, # Delta-Gamma; Alternative "Poisson-link delta-model" using log-link for numbers-density and log-link for biomass per number
-  #               "Link"    = 3)
+  #               "Link"    = 4)
+
+  ObsModel <- c("PosDist" = 1, # Delta-Gamma; Alternative "Poisson-link delta-model" using log-link for numbers-density and log-link for biomass per number
+                "Link"    = 3)
 
   # Make settings
   settings = make_settings(n_x = n_x,
@@ -211,6 +250,9 @@ vast_wrapper <- function(n_x = 50){
                            )
 
   settings$epu_to_use <- c("Georges_Bank", "Gulf_of_Maine", "Mid_Atlantic_Bight")
+  ## Dual ordination  ##
+  settings$FieldConfig["Epsilon",1] = 4
+
 
   #####
   ## Model fit -- make sure to use new functions
@@ -223,34 +265,39 @@ vast_wrapper <- function(n_x = 50){
   # I think it's getting the Year column (which actually represents Season-Year) aligned with the right Season
 
   cov_dat <- zoop_dat %>%
-    mutate(Year = as.numeric(year_season) - 1) %>%
+    mutate(Year = as.numeric(year_semester) - 1) %>%
     select(Lat = lat,
            Lon = lon,
-           season,
+           semester,
            Year) %>%
     data.frame()
 
+
+  # working_dir <- here::here("analysis/vast_seasonal_EOF3_dual/")
   # fit_og <- readRDS(paste0(working_dir, "/fit.rds"))
+
+
     # Don't use X_contrasts, so that fixed season-year slope isn't confounded with beta term
   fit = fit_model(settings = settings,
                   Lat_i = zoop_dat$lat,
                   Lon_i = zoop_dat$lon,
                   # t_i = zoop_dat$t_i,
-                  t_i = as.numeric(zoop_dat$year_season) - 1,
+                  t_i = as.numeric(zoop_dat$year_semester) - 1,
                   c_i = zoop_dat$species_number,
                   b_i = as_units(zoop_dat$abundance, "count"),
                   a_i = as_units(zoop_dat$areaswept_km2, "km^2"),
                   epu_to_use = settings$epu_to_use,
                   newtonsteps = 0,
                   covariate_data = cov_dat,
-                  X1_formula = ~ season,
-                  X1config_cp = matrix(2, nrow = length(spp_list), ncol = 4),
-                  X_contrasts = list(season = contrasts(zoop_dat$season, contrasts = FALSE)),
+                  X1_formula = ~ semester,
+                  X1config_cp = matrix(2, nrow = length(spp_list), ncol = 2),
+                  X_contrasts = list(semester = contrasts(zoop_dat$semester, contrasts = FALSE)),
                   # Parameters = fit_og$ParHat,
                   #hessian.fixed = H,
                   getsd = TRUE,
                   Use_REML = TRUE,
                   run_model = TRUE,
+                  silent = FALSE,
                   working_dir = paste0(working_dir, "/"),
                   optimize_args = list("lower" = -Inf,
                                        "upper" = Inf))
@@ -260,26 +307,21 @@ vast_wrapper <- function(n_x = 50){
   results = plot_results( fit,
                           check_residuals = FALSE,
                           plot_set= c(3,14,16,18), #c(3,16,18),
-                          working_dir = "analysis/vast_seasonal_EOF3/figures/",
+                          working_dir = paste0(working_dir, "/"),
                           category_names = spp_list,
                           Version = "VAST_v14_0_1",
-                          # year_labels = levels(zoop_dat$year_season),
+                          year_labels = levels(zoop_dat$year_season),
                           strata_names =  c("Georges Bank", "Gulf of Maine", "Mid-Atlantic Bight"))
-
 
   saveRDS(fit, file = paste0(working_dir, "/fit.rds"))
   saveRDS(results, file = paste0(working_dir, "/results.rds"))
 
+
   return(fit)
 }
 
-## Dual ordination  ##
-# settings$FieldConfig["Epsilon",1] = 4
 
-working_dir <- here::here("analysis/vast_seasonal_EOF3/")
-fit <- readRDS(paste0(working_dir, "/fit.rds"))
-
-vast_runs <- vast_wrapper(n_x = 500)
+vast_runs <- vast_wrapper(n_x = 50)
 
 
 
@@ -294,10 +336,10 @@ expand_grid(year = 1992:2021, season = c("winter", "spring", "summer", "fall")) 
   pull(year_season)
 
 
-
+fit$settings
 ffit <- plot_factors(fit = fit, Report = fit$Report, ParHat = fit$ParHat, Data = fit$data_list,
              SD = fit$parameter_estimates$SD,
-             # category_names = spp_list,
+             category_names = spp_list,
              # mapdetails_list = MapDetails_List,
              # n_cells = 2000,
              plotdir = paste0(working_dir, "/"))
@@ -364,7 +406,7 @@ results = plot_results( fit,
                 strata_names =  c("Georges Bank", "Gulf of Maine", "Mid-Atlantic Bight"))
 
 
-
+results <- readRDS(here::here("analysis/vast_seasonal_EOF3_dual/results.rds"))
 
 # use `ecodist` to display ordination
 index1_tf = results$Factors$Rotated_loadings$EpsilonTime1
