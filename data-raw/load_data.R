@@ -18,16 +18,17 @@ usethis::use_data(survdat, overwrite = TRUE)
 #               destfile = "data-raw/EcoMon_Plankton_data_v3_8.csv", mode = "wb")
 
 
-ecomon_long <- readr::read_csv("data-raw/EcoMon_Plankton_data_v3_8.csv") %>%
+ecomon_long <- readr::read_csv("data-raw/EcoMon_Plankton_data_v3_10.csv") %>%
+  rename_with(stringr::str_to_lower) %>%
   mutate(volume = as.double(volume_100m3),
          date = as.Date(date, format="%d-%b-%y")) %>%
   select(-ends_with("_10m2"),
          -ends_with("_10m2x"),
-         -starts_with("volume_"),
-         cavoli_100m3 = cavoli_100m3x) %>%
-  pivot_longer(cols = c(ends_with("_100m3"), "clauso"),
+         -starts_with("volume_")) %>%
+  pivot_longer(cols = c(ends_with("_100m3")),
                names_to = "spp",
-               values_to = "abundance")
+               values_to = "abundance") %>%
+  rename(station = staton)
 
 usethis::use_data(ecomon_long, overwrite = TRUE)
 
@@ -80,7 +81,7 @@ ecomon_format <- ecomon_long %>%
          date = as.Date(date, format = "%d-%b-%y"),
          id = as.factor(paste0(cruise_name, "_", station)),
          vessel = as.factor(substr(cruise_name, start = 1, stop = 2)),
-         areaswept_km2 = 1,
+         areaswept_km2 = .001,
          day = as.numeric(strftime(date, format = "%j")),
          year = as.numeric(strftime(date, format = "%Y")),
          season = case_when(day %in% 1:90 ~ "winter",
@@ -94,7 +95,8 @@ ecomon_format <- ecomon_long %>%
 crs_epu <- 4269 # NAD83 https://epsg.org/crs_4269/NAD83.html
 # crs_epu <- 9311 # NAD27 https://epsg.org/crs_9311/NAD27-US-National-Atlas-Equal-Area.html
 
-epu <- ecodata::epu_sf %>%
+epu <- sf::read_sf(here::here("data-raw/EPU_NOESTUARIES.shp")) %>%
+# epu <- ecodata::epu_sf %>%
   sf::st_transform(crs = sf::st_crs(crs_epu))
 
 sf::sf_use_s2(FALSE)
@@ -102,7 +104,8 @@ sf::sf_use_s2(FALSE)
 ## Post stratify data according to EPUs
 ecomon_epu <- ecomon_format %>%
   sf::st_as_sf(coords = c("lon","lat"), crs = crs_epu) %>%
-  sf::st_join(ecodata::epu_sf) %>%
+  sf::st_join(epu) %>%
+  # sf::st_join(ecodata::epu_sf) %>%
   sfc_as_cols(names = c("lon", "lat")) %>%
   sf::st_drop_geometry() %>%
   select(id,
