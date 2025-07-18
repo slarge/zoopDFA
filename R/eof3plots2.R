@@ -143,8 +143,8 @@ index_full <- index %>%
   # left_join(hc_c_df)
 
 spp_names <- c("calfin" = "italic(Calanus~~finmarchicus)",
-               "chaeto" = "Chaetognatha",
                "cham" = "italic(Centropages~~hamatus)",
+               "chaeto" = "Chaetognatha",
                "clauso" = "italic(Clausocalanus~~arcuicornis)",
                "ctyp" = "italic(Centropages~~typicus)",
                "euph" = "Euphausiacea",
@@ -192,12 +192,12 @@ ggsave(filename = here::here(working_dir, "index_plot.jpeg"), index_plot, bg = "
 
 ## CCA
 ndim_cca <- 2 # number of dimension to filter in the EOFs
+ndim_cat <- 4
 # names(fit$Report)
 E = list(
   "v" = fit$Report$Ltime_epsilon1_tf, # temporal loadings (p * p)
-  "u" = fit$Report$Epsiloninput1_gff[, 1:ndim_cca,] # spatial loadings (n * p)
+  "u" = fit$Report$Epsiloninput1_gff[, 1:ndim_cat,] # spatial loadings (n * p)
 )
-
 
 ## Construct the seasonal variable
 t_series <- expand_grid(year = start_year:end_year,
@@ -264,7 +264,8 @@ cca_ts <- t_series %>%
 
 cca_ts_plot <- ggplot(data = cca_ts, aes(x = time, y = value, color = name)) +
   geom_vline(xintercept = cca_ts$time[which(stringr::str_detect(cca_ts$season,"winter"))],
-             linetype = "dashed", color = "skyblue", alpha = .75) +
+             # linetype = "dashed",
+             color = "grey90", alpha = .75) +
   geom_point(size = 0.5, shape = 19) +
   geom_path() +
   facet_wrap(.~type, nrow = 2) +
@@ -306,19 +307,29 @@ pca_ts <- rotate_factors(L_pj = fit$Report$Ltime_epsilon1_tf, RotationMethod = "
 #                           tt$L_pj_rot)
 
 
-factor_t <- data.frame(pca_ts$L_pj_rot, #results$Factors$Rotated_loadings$EpsilonTime1,
-                       year_season = levels(zoop_dat$year_season),
-                       cca = cca_ts %>% filter(type == "CCA variable", name == "CCA") %>% na.omit() %>% pull(value),
-                       ancillary = cca_ts %>% filter(type == "CCA variable", name == "Ancillary") %>% na.omit() %>% pull(value)) %>%
-  right_join(yearseason_set) %>%
-  left_join(hc_t_df)
+
+
+factor_t <- t_series %>%
+  left_join(data.frame(pca_ts$L_pj_rot, #results$Factors$Rotated_loadings$EpsilonTime1,
+                       year_season = levels(zoop_dat$year_season)), by = join_by(year_season)) %>%
+  left_join(cca_ts %>% filter(type == "CCA variable", name == "CCA") %>% select(year_season, cca = value), by = join_by(year_season)) %>%
+  left_join(cca_ts %>% filter(type == "CCA variable", name == "Ancillary") %>% select(year_season, ancillary = value), by = join_by(year_season)) %>%
+  left_join(hc_t_df, by = join_by(year_season))
+
+
+# factor_t <- data.frame(pca_ts$L_pj_rot, #results$Factors$Rotated_loadings$EpsilonTime1,
+#                        year_season = levels(zoop_dat$year_season)) %>%
+#   right_join(yearseason_set, by = join_by(year_season)) %>%
+#
+#
 
 factor_time_all <- factor_t %>%
   mutate(group = 0)
 
+### The problem is ancillary needs to be a full timeseries with no NAs and join to the clusters that might have NAs. Ancillary should have no missing values
+
 factor_time <- bind_rows(factor_t,
                          factor_time_all) %>%
-  drop_na(group) %>%
   mutate(year = as.numeric(gsub("_.*", "", year_season)),
          season = factor(gsub(".*_", "", year_season),
                          levels = c("winter", "spring", "summer", "fall")),
@@ -328,14 +339,16 @@ factor_time <- bind_rows(factor_t,
                           season == "fall" ~ 0.75,
                           TRUE ~ NA_integer_),
          time = year + time,
-         group = ifelse(group == 0, "All data",
-                        paste0("Cluster ", group))) %>%
+         group = case_when(group == 0 ~ "All data",
+                           group > 0 ~ paste0("Cluster ", group),
+                           TRUE ~ NA_character_)) %>%
   rename(`Factor 1` = X1,
          `Factor 2` = X2) %>%
   pivot_longer(cols = c(`Factor 1`, `Factor 2`,
                         "cca", "ancillary"))
 
 labels_pca = factor_time %>%
+  drop_na(group) %>%
   filter(name %in% c("Factor 1", "Factor 2")) %>%
   select(name, group) %>%
   distinct %>%
@@ -343,6 +356,7 @@ labels_pca = factor_time %>%
   mutate(label = letters[cur_group_id()])
 
 labels_cca = factor_time %>%
+  drop_na(group) %>%
   filter(name == "cca") %>%
   select(name, group) %>%
   distinct %>%
@@ -355,7 +369,7 @@ factor_labels <- as_labeller(c(`factor_1` = "Factor 1",
                                `hclust_1` = "Cluster 1",
                                `hclust_2` = "Cluster 2"))
 
-factor_cluster_pca_plot <- ggplot(factor_time %>% filter(name %in% c("Factor 1", "Factor 2")), aes(x = time, y = value, color = season)) +
+factor_cluster_pca_plot <- ggplot(factor_time %>% filter(name %in% c("Factor 1", "Factor 2")) %>% drop_na(group), aes(x = time, y = value, color = season)) +
   geom_segment(aes(xend = time, yend = 0), na.rm = FALSE, linewidth = 0.5) +
   geom_point(na.rm = FALSE, size = 0.5) +
   geom_text(data = labels_pca, aes(label = label), x = start_year + 3, y = 2.5, hjust = 0, vjust = 0, inherit.aes = FALSE) +
@@ -363,20 +377,29 @@ factor_cluster_pca_plot <- ggplot(factor_time %>% filter(name %in% c("Factor 1",
   # geom_line() +
   labs(x = "", y = "Factor Loadings", color = "Season") +
   scale_color_brewer(palette = "Set1") +
-  facet_grid(group~name) +
+  facet_grid(group~name, drop = TRUE) +
   theme_minimal() +
   theme(legend.position = "bottom",
         text = element_text(size = 8)) +
   NULL
 factor_cluster_pca_plot
 
-factor_cluster_cca_plot <- ggplot(data = factor_time %>% filter(name == "cca"), aes(x = time, y = value, color = season)) +
-  geom_segment(aes(xend = time, yend = 0), na.rm = FALSE, linewidth = 0.5) +
-  geom_point(na.rm = FALSE, size = 0.5) +
+ancillary_time <- factor_time %>%
+  filter(name == "ancillary") %>%
+  select(time, value, season) %>%
+  expand_grid(group = c("All data", "Cluster 1", "Cluster 2"))
+
+cca_time <- factor_time %>%
+  filter(name == "cca") %>%
+  drop_na(group)
+
+factor_cluster_cca_plot <- ggplot() +
+  # geom_point(data = ancillary_time, aes(x = time, y = value), color = "#F8766DFF", alpha = 0.5) +
+  geom_line(data = ancillary_time, aes(x = time, y = value), color = "#F8766DFF", alpha = 0.5) +
+  geom_segment(data = cca_time, aes(x = time, y = value, xend = time, yend = 0, color = season), na.rm = FALSE, linewidth = 1) +
+  geom_point(data = cca_time, aes(x = time, y = value, color = season), na.rm = FALSE, size = 1) +
   geom_text(data = labels_cca, aes(label = label), x = start_year, y = 1.25, hjust = 0, vjust = 0, inherit.aes = FALSE) +
   geom_hline(yintercept = 0) +
-  # geom_path(data = factor_time %>% filter(name == "ancillary"), aes(x = time, y = value)) +
-  # geom_line() +
   labs(x = "", y = "Factor Loadings", color = "Season") +
   scale_color_brewer(palette = "Set1") +
   facet_grid(group~name) +
@@ -385,6 +408,7 @@ factor_cluster_cca_plot <- ggplot(data = factor_time %>% filter(name == "cca"), 
         text = element_text(size = 8)) +
   NULL
 factor_cluster_cca_plot
+
 
 dend_year <- as.dendrogram(hc_t, type = "rectangle") %>%
   color_labels(k = 2, col = c("black", "grey50")) %>%
@@ -477,41 +501,41 @@ ggsave(filename = here::here(working_dir, "/factor_loadings_spp.jpeg"), factor_t
 xlims = c(-77, -65)
 ylims = c(35, 45)
 # crs <- sf::st_crs("+proj=utm +zone=19 +datum=WGS84 +units=km")
-crs <-  "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
+# crs <-  "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
+crs <- 4269
+trans_crs <- 32619
 ne_countries <- rnaturalearth::ne_countries(scale = 10,
                                             continent = "North America",
                                             returnclass = "sf") %>%
-  sf::st_transform(crs = crs)
+  sf::st_transform(crs = trans_crs)
 
 ## 2) State layer
 ne_states <- rnaturalearth::ne_states(country = "united states of america",
                                       returnclass = "sf") %>%
-  sf::st_transform(crs = crs)
+  sf::st_transform(crs = trans_crs)
 
 
 # cca
 
-cca_epsilontime_1 <- data.frame(epsilontime = (as.matrix(fit$Report$Epsiloninput1_gff[,ndim_cca,]) %*% cca_res$xcoef[,1]),
-                                fit$spatial_list$latlon_g) %>%
+cca_epsilontime_1 <- data.frame(season = 1:4) %>%
+  mutate(epsilontime = purrr::map(.x = season, ~ (as.matrix(E$u[,.x,]) %*% cca_res$xcoef[,1])[,1]),
+         season = case_when(season == 1 ~ "winter",
+                            season == 2 ~ "spring",
+                            season == 3 ~ "summer",
+                            season == 4 ~ "fall",
+                            TRUE ~ NA_character_)) %>%
+  tidyr::unnest(cols = epsilontime) %>%
+  mutate(Lat = rep.int(fit$spatial_list$latlon_g[,"Lat"], times = ndim_cat),
+         Lon = rep.int(fit$spatial_list$latlon_g[, "Lon"], times = ndim_cat),
+         season = factor(season, levels = c("winter", "spring", "summer", "fall"))) %>%
   sf::st_as_sf(coords = c("Lon","Lat")) %>%
-  sf::st_set_crs(crs)
-
-# ccavar1_x <- data.frame(season_n = 1:4) %>%
-#   mutate(dat = purrr::map(.x = season_n, ~ data.frame(fit$spatial_list$latlon_g,
-#                                                       "factor" = "cca",
-#                                                       "cca" = (as.matrix(fit$Report$Epsiloninput1_gff[,.x,]) %*% cca_res$xcoef[,1]))),
-#          season = factor(season_names, levels = c("winter", "spring", "summer", "fall"))) %>%
-#   tidyr::unnest(cols = dat) %>%
-#   sf::st_as_sf(coords = c("Lon","Lat")) %>%
-#   sf::st_set_crs(crs) %>%
-#   select(-season_n)
+  sf::st_set_crs(crs) %>%
+  sf::st_transform(crs = trans_crs) ## project to UTM Zone 19N
 
 # pca
-dimnames(results$Factors$Rotated_projected_factors$EpsilonTime1) <- list(1:2000, season_names, c("Factor_1", "Factor_2"))
-dim(factor_fit$Rotated_projected_factors$EpsilonTime1)
-
+dimnames(factor_fit$Rotated_projected_factors$EpsilonTime1) <- list(1:2000, season_names, c("Factor_1", "Factor_2"))
 pca_epsilontime_1 <- data.frame(factor_fit$Rotated_projected_factors$EpsilonTime1,# Factors$Rotated_projected_factors$EpsilonTime1,
-                            fit$spatial_list$latlon_g) %>%
+                                fit$spatial_list$latlon_g) %>%
   tidyr::pivot_longer(cols =  !c("Lat", "Lon"),
                       names_to = "season_factor",
                       values_to = "epsilontime") %>%
@@ -520,49 +544,79 @@ pca_epsilontime_1 <- data.frame(factor_fit$Rotated_projected_factors$EpsilonTime
          season = factor(season, levels = c("winter", "spring", "summer", "fall")),
          factor = as.factor(gsub("_", " ", factor))) %>%
   sf::st_as_sf(coords = c("Lon","Lat")) %>%
-  sf::st_set_crs(crs)
+  sf::st_set_crs(crs) %>%
+  sf::st_transform(crs = trans_crs) ## project to UTM Zone 19N
 
-epsilontime_1_all <- bind_rows(epsilontime_1, ccavar1_x)
 
+region <- NEFSCspatial::epu_sf %>%
+  sf::st_transform(trans_crs) %>%
+  sf::st_make_valid() %>%
+  filter(EPU != "SS")
 
-epsilontime_plot <- ggplot() +
-  geom_sf(data = epsilontime_1, aes(color = epsilontime), size = 0.5, stroke = 0, shape = 16) +
+# Get the coordinates from the sf object
+coords <- sf::st_coordinates(cca_epsilontime_1)
+
+# Compute the tessellation using the deldir package
+voronoi <- deldir::deldir(coords[,1], coords[,2])
+
+# Convert the Voronoi tiles to sf polygons
+voronoi_polygons_cca <- sf::st_collection_extract(
+  sf::st_voronoi(sf::st_union(cca_epsilontime_1))
+)
+voronoi_polygons_pca <- sf::st_collection_extract(
+  sf::st_voronoi(sf::st_union(pca_epsilontime_1))
+)
+
+# Create a boundary (the convex hull of the points) to clip the polygons
+boundary <- sf::st_union(region)
+
+# Create an sf data frame from the polygons
+voronoi_sf_cca <- sf::st_sf(geometry = voronoi_polygons_cca)
+voronoi_sf_pca <- sf::st_sf(geometry = voronoi_polygons_pca)
+
+# Clip the Voronoi polygons to the boundary
+voronoi_clipped_cca <- sf::st_intersection(voronoi_sf_cca, boundary)
+voronoi_clipped_pca <- sf::st_intersection(voronoi_sf_pca, boundary)
+
+# Join the original point data to the new polygons
+final_polygons_cca <- sf::st_join(voronoi_clipped_cca, cca_epsilontime_1)
+final_polygons_pca <- sf::st_join(voronoi_clipped_pca, pca_epsilontime_1)
+
+# pca
+epsilontime_plot_pca <- ggplot() +
+  geom_sf(data = final_polygons_pca %>% drop_na(season), aes(color = epsilontime, fill = epsilontime)) +
   geom_sf(data = ne_countries, color = "grey40", size = 0.05) +
   geom_sf(data = ne_states, color = "grey40", size = 0.05) +
   facet_grid(season~factor) +
   coord_sf(crs = crs, xlim = xlims, ylim = ylims) +
   scale_color_viridis_c(option = "inferno", na.value = "transparent") +
-  theme_minimal() +
+  scale_fill_viridis_c(option = "inferno", na.value = "transparent") +
+  theme_minimal(base_size = 8) +
   theme(legend.position = "bottom",
-        axis.text.x = element_text(angle = 45, vjust = 0, hjust = 0, size = 7),
-        legend.title = element_text(size = 7),
-        legend.text = element_text(size = 7),
-        axis.text = element_text(size = 7)) +
+        # legend.position.inside = c(1, 0),
+        axis.text.x = element_text(angle = 45, vjust = 0, hjust = 0)) +
   NULL
 # epsilontime_plot
 
-ggsave(filename = here::here("analysis/vast_seasonal_EOF3_dual_310/epsilontime_season.jpeg"), epsilontime_plot, bg = "white",
+ggsave(filename = here::here(working_dir, "/epsilontime_season_pca.jpeg"), epsilontime_plot, bg = "white",
        width = 85, units = "mm", device = jpeg, dpi = 500)
 
-
 epsilontime_cca_plot <- ggplot() +
-  geom_sf(data = cca_epsilontime_1, aes(color = epsilontime), size = 0.5, stroke=0, shape=16) +
+  geom_sf(data = final_polygons_cca %>% drop_na(season), aes(fill = epsilontime, color = epsilontime)) +#, size = 0.5, stroke=0, shape=16) +
+  facet_wrap(~season, drop = TRUE, ncol = 1) +
   geom_sf(data = ne_countries, color = "grey40", size = 0.05) +
   geom_sf(data = ne_states, color = "grey40", size = 0.05) +
-  # facet_grid(season~.) +
   coord_sf(crs = crs, xlim = xlims, ylim = ylims) +
   scale_color_viridis_c(option = "rocket", na.value = "transparent") +
-  theme_minimal() +
-  theme(#legend.position = "bottom",
-        legend.position.inside = c(0.0, 0.0),
-        axis.text.x = element_text(angle = 45, vjust = 0, hjust = 0, size = 7),
-        legend.title = element_text(size = 7),
-        legend.text = element_text(size = 7),
-        axis.text = element_text(size = 7)) +
+  scale_fill_viridis_c(option = "rocket", na.value = "transparent") +
+  theme_minimal(base_size = 8) +
+  theme(legend.position = "bottom",
+        # legend.position.inside = c(1, 0),
+        axis.text.x = element_text(angle = 45, vjust = 0, hjust = 0)) +
   NULL
-epsilontime_cca_plot
+# epsilontime_cca_plot
 
-ggsave(filename = here::here(working_dir, "/epsilontime_cca.jpeg"), epsilontime_cca_plot, bg = "white",
+ggsave(filename = here::here(working_dir, "/epsilontime_season_cca.jpeg"), epsilontime_cca_plot, bg = "white",
        width = 85, units = "mm", device = jpeg, dpi = 500)
 
 
