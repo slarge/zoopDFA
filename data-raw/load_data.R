@@ -182,3 +182,11 @@ ecomon_strata <- ecomon_strata %>%
 
 usethis::use_data(ecomon_strata, overwrite = TRUE)
 
+
+### PANGAEA Copepod data
+
+tmp <- here::here("data-raw", "Brun-etal_2016_Copepode_trait.xlsx")
+download.file(url = "https://store.pangaea.de/Publications/BrunP-etal_2016/Brun-etal_2016_Copepode_trait.xlsx", destfile = tmp)
+
+copepod_traits <- readxl::read_xlsx(tmp, sheet = "Body size")
+usethis::use_data(copepod_traits, overwrite = TRUE)
