@@ -1,4 +1,4 @@
-# VAST EOF model with seasonal effects
+# VAST EOF model icthyoplankton with dual ordination
 # modified from https://github.com/James-Thorson-NOAA/VAST/wiki/
 
 # install.packages('TMB', type = 'source')
@@ -6,6 +6,7 @@
 library(dplyr)
 library(tidyr)
 library(ggplot2)
+# library(INLA)
 library(VAST)
 
 #
@@ -13,135 +14,82 @@ library(VAST)
 # Sys.setenv(PATH = paste("C:/Rtools/bin", Sys.getenv("PATH"), sep=";"))
 # Sys.setenv(BINPREF = "C:/Rtools/mingw_$(WIN)/bin/")
 
-# setwd(R'(C:\Users\James.Thorson\Desktop\Git\zoopDFA)')
-
 # Load Data -----
 data("ecomon_epu")
 #
-# # # # # Number of stations per year
+
+# # # Number of stations per year
 # total_stations <- ecomon_epu %>%
 #   group_by(year) %>%
 #   summarize(total = n_distinct(id))
-# #
-# #
-# # ### Proportion of stations with positive tows per year. Cutoff used to "keep"
-# spps <- ecomon_epu %>%
-#   mutate(present = ifelse(abundance > 0,
-#                           1, 0)) %>%
-#   filter(year >= 1994,
-#          spp != "euph1") %>%
-#   left_join(total_stations) %>%
-#   group_by(year, season, spp) %>%
-#   summarize(positive_stations = sum(present, na.rm = TRUE)/total,
-#             keep = ifelse(positive_stations > .1,
-#                           1, 0),
-#             forage_group = forage_group) %>%
-#   distinct()
-
-# #
-# # ## List of spp where the total number of years by season is greater than 5
-# # ## and each spp group has more than cutoff of positive tows
-# spp_list <- spps %>%
-#   dplyr::filter(#season %in% season_list,
-#     forage_group < 100) %>%
-#   group_by(spp) %>%
-#   summarize(count = sum(keep)) %>%
-#   filter(count > 26) %>%
-#   select(spp) %>%
-#   distinct() %>%
-#   pull(spp)
-
-# # # Number of stations per year
-total_stations <- ecomon_epu %>%
-  group_by(year) %>%
-  summarize(total = n_distinct(id))
 
 
 ### Proportion of stations with positive tows per year. Cutoff used to "keep"
-spps <- ecomon_epu %>%
-  mutate(present = ifelse(abundance > 0,
-                          1, 0)) %>%
-  filter(year >= 1999,
-         forage_group >= 100,
-         spp != "euph1") %>%
-  left_join(total_stations) %>%
-  mutate(semester = ifelse(season %in% c("winter", "spring"), "first", "second")) %>%
-  group_by(year, semester, spp) %>%
-  reframe(positive_stations = sum(present, na.rm = TRUE)/total,
-          keep = ifelse(positive_stations > .1,
-                        1, 0),
-          forage_group = forage_group) %>%
-  distinct()
+# spps <- ecomon_epu %>%
+#   mutate(present = ifelse(abundance > 0,
+#                           1, 0)) %>%
+#   filter(year >= 1999,
+#          forage_group >= 100,
+#          spp != "euph1") %>%
+#   left_join(total_stations) %>%
+#   # mutate(semester = ifelse(season %in% c("winter", "spring"), "first", "second")) %>%
+#   group_by(year, spp) %>%
+#   reframe(positive_stations = sum(present, na.rm = TRUE)/total,
+#           keep = ifelse(positive_stations > .1,
+#                         1, 0),
+#           forage_group = forage_group) %>%
+#   distinct()
 
 
+## List of spp where the total number of years with positive tows is greater than 5
+## and each spp group has more than cutoff of positive tows
 
-
-# #
-# # ## List of spp where the total number of years by season is greater than 5
-# # ## and each spp group has more than cutoff of positive tows
-spp_list <- spps %>%
-  dplyr::filter(#season %in% season_list,
-    forage_group >= 100) %>%
-  group_by(spp) %>%
-  summarize(count = sum(keep)) %>%
-  filter(count > 5) %>%
-  select(spp) %>%
-  distinct() %>%
-  pull(spp)
-# #
+# spp_list <- spps %>%
+#   dplyr::filter(#season %in% season_list,
+#     forage_group >= 100) %>%
+#   group_by(spp) %>%
+#   summarize(count = sum(keep)) %>%
+#   filter(count > 5) %>%
+#   select(spp) %>%
+#   distinct() %>%
+#   pull(spp)
+# # #
 # ggplot(spps %>% filter(spp %in% spp_list,
 #                        keep == 1), aes(x = year, y = positive_stations, color = spp)) +
-#   geom_point() +
-#   facet_wrap(~semester)
+#   geom_point()+
+#   geom_path()
+
+# n_x = 100
+spp_list <- c("ammspp", "bretyr", "citarc", "cluhar", "etrspp", "gadmor", "hipobl",
+              "limfer", "melaeg", "merbil", "parden", "pepspp", "scoaqu", "urospp")
 
 
-n_x = 100
-
-vast_wrapper <- function(n_x = 50){
-  ## Seasonal model -----
-  working_dir <- here::here("analysis/vast_seasonal_EOF3_dual_ich/")
+vast_wrapper <- function(n_x = 50, start_year = 2010, end_year = 2014, #season = c("winter", "spring", "summer", "fall"),
+                         spp_list = "urospp", working_dir = "/"){
 
   if(!dir.exists(working_dir)) {
     dir.create(working_dir, recursive  = TRUE)
   }
-  #
-  ## Attempt to create a log file
+
+  ## create a log file ----
   my_log <- file(sprintf("%s/log-%s.txt", working_dir, n_x)) # File name of output log
 
   sink(my_log, append = TRUE, type = "output") # Writing console output to log file
   on.exit(sink(file = NULL), add = TRUE, after = TRUE)
 
-  sink(my_log, append = TRUE, type = "message")
+  sink(my_log, append = TRUE, type = "message") # Writing console output to log file
   on.exit(sink(file = NULL), add = TRUE, after = TRUE)
+
 
 
   zoop_dat <- ecomon_epu %>%
     dplyr::filter(spp %in% spp_list,
-#                  EPU %in% c("GB", "GOM", "MAB"),
-#                  as.numeric(year) >= 2010,
-#                  as.numeric(year) < 2015) %>%
-                  as.numeric(year) >= 2004,
-                  as.numeric(year) <= 2007,
+                  as.numeric(year) >= start_year,
+                  as.numeric(year) <= end_year,
                   EPU %in% c("GB", "GOM", "MAB")) %>%
     dplyr::mutate(areaswept_km2 = 1,
-                  year_level = factor(year),
-                  semester = ifelse(season %in% c("winter", "spring"), "first", "second"),
-                  semester = factor(semester, levels = c("first", "second")),
-                  year_labels = factor(paste(year, semester, sep = "_")),
-                  year_semester = factor(year_labels, levels = paste(rep(levels(year_level),
-                                                                       each = nlevels(semester)),
-                                                                   levels(semester),
-                                                                   sep="_")),
-                  # season = factor(season, levels = c("winter", "spring", "summer", "fall")),
-                  # year_labels = factor(paste(year, season, sep = "_")),
-                  # year_season = factor(year_labels, levels = paste(rep(levels(year_level),
-                  #                                                      each = nlevels(season)),
-                  #                                                  levels(season),
-                  #                                                  sep="_")),
                   species_number = as.numeric(factor(spp)) - 1) %>%
     select(year,
-           year_semester,
-           semester,
            lat,
            lon,
            areaswept_km2,
@@ -149,9 +97,11 @@ vast_wrapper <- function(n_x = 50){
            spp,
            abundance) %>%
     droplevels() %>%
-    # mutate(t_i = as.numeric(year_season)- 1) %>%
-    arrange(year_semester) %>%
+    group_by(year, lon, lat) %>%
+    filter(!all(abundance == 0)) %>%
+    # arrange(year_semester) %>%
     data.frame()
+
 
   # table( zoop_dat$year, zoop_dat$spp)
 
@@ -160,17 +110,16 @@ vast_wrapper <- function(n_x = 50){
   # ggplot(zoop_dat, aes(x = lon, y = lat)) +
   #   geom_point(data = zoop_dat %>% filter(abundance == 0), color = "black", fill = "black", shape = 21) +
   #   geom_point(data = zoop_dat %>% filter(abundance > 0), aes(color = spp, size = abundance), alpha = 0.5) +
-  #   facet_grid(year ~ semester, drop = FALSE) +
+  #   facet_wrap(year ~ ., drop = FALSE) +
   #   # labs(title = i) +
   #   NULL
   # # #
 
-  #####
-  ## Model settings
-  #####
 
 
-  ##  Random Fields -----
+  ## Model settings ----
+
+  ###  Random Fields -----
 
   ## Control the random fields part of the model.
   ## Omega = X is the number of random spatial fields to apply
@@ -187,10 +136,12 @@ vast_wrapper <- function(n_x = 50){
   # FieldConfig <- c("Omega1" = "IID", "Epsilon1" = "IID",
   #                  "Omega2" = "IID", "Epsilon2" = "IID")
 
-  FieldConfig = matrix(c("IID", "Identity", "IID", 2, 0, 0, "IID", "Identity"), ncol = 2, nrow = 4,
-                       dimnames = list(c("Omega", "Epsilon", "Beta", "Epsilon_year"),
-                                       c("Component_1", "Component_2")))
-  ## Autoregressive structure -----
+  # The following is the default EOF3 structure and is the default in VAST::make_settings(purpose = "EOF3")
+  # FieldConfig <- matrix(c("IID", "Identity", "IID", 2, 0, 0, "IID", "Identity"), ncol = 2, nrow = 4,
+  #                      dimnames = list(c("Omega", "Epsilon", "Beta", "Epsilon_year"),
+  #                                      c("Component_1", "Component_2")))
+
+  ### Autoregressive structure -----
 
   ## Control autoregressive structure for parameters over time
   ## Changing the settings here creates different
@@ -227,14 +178,16 @@ vast_wrapper <- function(n_x = 50){
   # Control observation model structure. The first
   # component sets the distribution of the positive
   # distribution component. ?VAST::make_data()
-#
-  # ObsModel <- c("PosDist" = 1, # Delta-Gamma; Alternative "Poisson-link delta-model" using log-link for numbers-density and log-link for biomass per number
-  #               "Link"    = 4)
 
-  ObsModel <- c("PosDist" = 1, # Delta-Gamma; Alternative "Poisson-link delta-model" using log-link for numbers-density and log-link for biomass per number
-                "Link"    = 3)
+  # Delta-Gamma; Poisson-link delta-model, but fixing encounter probability=1 for any year where all samples encounter the species and
+  # encounter probability=0 for any year where no samples encounter the species
+  ObsModel <- c("PosDist" = 1,
+                "Link"    = 4)
 
-  # Make settings
+  # ObsModel <- c("PosDist" = 1, # Delta-Gamma; Conventional delta-model, but fixing encounter probability=1 for any year where all samples encounter the species
+  #               "Link"    = 3)
+
+  ## Make settings ----
   settings = make_settings(n_x = n_x,
                            Region = "northwest_atlantic",
                            strata.limits = "EPU",
@@ -242,35 +195,32 @@ vast_wrapper <- function(n_x = 50){
                            purpose = "EOF3",
                            n_categories = 2,
                            ObsModel = ObsModel,
-                           RhoConfig = RhoConfig#,
-                           # use_anisotropy = FALSE,
-                           # FieldConfig = FieldConfig,
-                           # bias.correct = FALSE,
-                           # Options = c('treat_nonencounter_as_zero' = FALSE)
-                           )
-
+                           RhoConfig = RhoConfig,
+                           mesh_package = "fmesher",
+                           treat_nonencounter_as_zero = TRUE,
+                           Options = c('treat_nonencounter_as_zero' = TRUE, 'Project_factors' = 1))
+  ## Add EPUs
   settings$epu_to_use <- c("Georges_Bank", "Gulf_of_Maine", "Mid_Atlantic_Bight")
-  ## Dual ordination  ##
-  settings$FieldConfig["Epsilon",1] = 4
+
+  ## Add dual ordination
+  settings$FieldConfig["Epsilon", 1] = 4
 
 
-  #####
-  ## Model fit -- make sure to use new functions
-  #####
+  ## Model fit ----
 
-  # To run the model with missing year_seasons, need to get the indexing right in the spatially varying season indicator
-  # it wouldn't run for season-year combos that have no data, but you can also drop those with essentially no impact on results
-  # as long as you then do the plotting right, and get the season-indicator Q term inputted correctly
+  # To run the model with missing year_seasons, you need to get the indexing right in the spatially varying season indicator.
+  # The model wouldn't run for season-year combos that have no data, but you can also drop those with essentially no impact on results
+  # as long as you then do the plotting right and get the season-indicator Q term inputted correctly
   # it's just a matter of getting the covariate_data right for earlier years with missing season-year combos ...
   # I think it's getting the Year column (which actually represents Season-Year) aligned with the right Season
 
-  cov_dat <- zoop_dat %>%
-    mutate(Year = as.numeric(year_semester) - 1) %>%
-    select(Lat = lat,
-           Lon = lon,
-           semester,
-           Year) %>%
-    data.frame()
+  # cov_dat <- zoop_dat %>%
+  #   mutate(Year = as.numeric(year_semester) - 1) %>%
+  #   select(Lat = lat,
+  #          Lon = lon,
+  #          # semester,
+  #          Year) %>%
+  #   data.frame()
 
 
   # working_dir <- here::here("analysis/vast_seasonal_EOF3_dual/")
@@ -281,48 +231,48 @@ vast_wrapper <- function(n_x = 50){
   fit = fit_model(settings = settings,
                   Lat_i = zoop_dat$lat,
                   Lon_i = zoop_dat$lon,
-                  # t_i = zoop_dat$t_i,
-                  t_i = as.numeric(zoop_dat$year_semester) - 1,
+                  # t_i = as.numeric(zoop_dat$year_semester) - 1,
+                  t_i = zoop_dat$year,
                   c_i = zoop_dat$species_number,
                   b_i = as_units(zoop_dat$abundance, "count"),
                   a_i = as_units(zoop_dat$areaswept_km2, "km^2"),
                   epu_to_use = settings$epu_to_use,
                   newtonsteps = 0,
-                  covariate_data = cov_dat,
-                  X1_formula = ~ semester,
-                  X1config_cp = matrix(2, nrow = length(spp_list), ncol = 2),
-                  X_contrasts = list(semester = contrasts(zoop_dat$semester, contrasts = FALSE)),
-                  # Parameters = fit_og$ParHat,
-                  #hessian.fixed = H,
+                  # covariate_data = cov_dat,
+                  # X1_formula = ~ semester,
+                  # X1config_cp = matrix(2, nrow = length(spp_list), ncol = 2),
+                  # X_contrasts = list(semester = contrasts(zoop_dat$semester, contrasts = FALSE)),
                   getsd = TRUE,
                   Use_REML = TRUE,
                   run_model = TRUE,
-                  silent = FALSE,
-                  working_dir = paste0(working_dir, "/"),
+                  silent = TRUE,
+                  working_dir = working_dir,
                   optimize_args = list("lower" = -Inf,
-                                       "upper" = Inf))
-                  # category_names = spp_list,
-                  # year_labels = levels(zoop_dat$year_season))
-
-  results = plot_results( fit,
-                          check_residuals = FALSE,
-                          plot_set= c(3,14,16,18), #c(3,16,18),
-                          working_dir = paste0(working_dir, "/"),
-                          category_names = spp_list,
-                          Version = "VAST_v14_0_1",
-                          year_labels = levels(zoop_dat$year_season),
-                          strata_names =  c("Georges Bank", "Gulf of Maine", "Mid-Atlantic Bight"))
+                                       "upper" = Inf),
+                  category_names = spp_list)
 
   saveRDS(fit, file = paste0(working_dir, "/fit.rds"))
-  saveRDS(results, file = paste0(working_dir, "/results.rds"))
 
+  # plot( fit )
+  results = plot_results( fit,
+                          check_residuals = FALSE,
+                          plot_set= c(3,16), #c(3,14,16,18), #c(3,16,18),
+                          working_dir = working_dir,
+                          # Version = "VAST_v14_0_1",
+                          category_names = spp_list,
+                          # year_labels = levels(zoop_dat$year_season),
+                          strata_names =  c("Georges Bank", "Gulf of Maine", "Mid-Atlantic Bight"))
+  saveRDS(results, file = paste0(working_dir, "/results.rds"))
 
   return(fit)
 }
 
 
-vast_runs <- vast_wrapper(n_x = 50)
-
+vast_runs <- vast_wrapper(n_x = 100,
+                          start_year = 1999,
+                          end_year = 2014,
+                          working_dir = here::here("analysis/20250418_vast_EOF3_dual_ich_310/"),
+                          spp_list = spp_list)
 
 
 MapDetails_List = make_map_info( "Region"=settings$Region, "spatial_list"=fit$spatial_list, "Extrapolation_List"=fit$extrapolation_list)
