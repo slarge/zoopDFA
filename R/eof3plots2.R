@@ -603,7 +603,7 @@ ggsave(filename = here::here(working_dir, "/epsilontime_season_pca.jpeg"), epsil
 
 epsilontime_cca_plot <- ggplot() +
   geom_sf(data = final_polygons_cca %>% drop_na(season), aes(fill = epsilontime, color = epsilontime)) +#, size = 0.5, stroke=0, shape=16) +
-  facet_wrap(~season, drop = TRUE, ncol = 1) +
+  facet_wrap(~season, drop = TRUE, nrow = 1) +
   geom_sf(data = ne_countries, color = "grey40", size = 0.05) +
   geom_sf(data = ne_states, color = "grey40", size = 0.05) +
   coord_sf(crs = crs, xlim = xlims, ylim = ylims) +
@@ -611,13 +611,37 @@ epsilontime_cca_plot <- ggplot() +
   scale_fill_viridis_c(option = "rocket", na.value = "transparent") +
   theme_minimal(base_size = 8) +
   theme(legend.position = "bottom",
+        plot.margin = margin(5.5, .5, 5.5, 5.5, "pt"),
         # legend.position.inside = c(1, 0),
         axis.text.x = element_text(angle = 45, vjust = 0, hjust = 0)) +
   NULL
 # epsilontime_cca_plot
 
+
+
 ggsave(filename = here::here(working_dir, "/epsilontime_season_cca.jpeg"), epsilontime_cca_plot, bg = "white",
        width = 85, units = "mm", device = jpeg, dpi = 500)
+
+
+design <- "
+ AA
+ BB
+"
+
+factor_loadings_plot <- wrap_plots(A = factor_taxa, B = epsilontime_cca_plot,
+                                  design = design) +
+  # plot_layout(heights = c(1, 3)) +
+  plot_layout(guides = 'keep') +
+  plot_annotation(tag_levels = "a") &
+  theme(legend.position = 'bottom',  legend.key.size = unit(0.25, 'cm'))
+
+ggsave(filename = here::here(working_dir, "/epsilontime_factor_loadings.tiff"), factor_loadings_plot, bg = "white",
+       device = grDevices::tiff,
+       width = 170,
+       # height = 220,
+       units = "mm",
+       dpi = 300,
+       compression = "lzw")
 
 
 cor_p <- (epsilontime_cca_plot + cor_mat_plot) / cca_ts_plot + plot_layout(nrow = 2, widths = c(1, 1, 2), heights = c(2, 2, 4))
